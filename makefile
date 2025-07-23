@@ -50,6 +50,13 @@ ifndef DOCKER
 endif
 	@$(DOCKER) build -t ${IMAGE_NAME} . && ${DOCKER} run -d -p 8000:8000 --name ${CONTAINER_NAME} ${IMAGE_NAME} 
 
+debug:
+ifndef DOCKER
+	@echo "Error: Docker is not installed. Please install Docker: https://docs.docker.com/get-docker/"
+	exit 1
+endif
+	@$(DOCKER) build -t ${IMAGE_NAME} . && ${DOCKER} run -p 8000:8000 --name ${CONTAINER_NAME} ${IMAGE_NAME} 
+
 down:
 ifndef DOCKER
 	@echo "Error: docker-compose not found. Please install it: https://docs.docker.com/compose/install/"
