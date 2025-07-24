@@ -7,6 +7,5 @@ client = TestClient(app)
 def test_root():
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json() == {"message": "Welcome to chatbot debate, go to /converstaion to get started"}
-
-
+    assert response.json() == {
+        "message": "Welcome to chatbot debate, go to /chat to get started"}
