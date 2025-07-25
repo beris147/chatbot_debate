@@ -1,20 +1,15 @@
+import asyncio
 from typing import List
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from api.personas.debate_persona import DebatePersona
 from api.services.chat_service import ChatService
 from api.services.llm_service import LLMService, get_llm
-from db.database import get_db, init_db
-from sqlalchemy.orm import Session
+from db.database import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
-def create_app():
-    app = FastAPI()
-    init_db()
-    return app
-
-
-app = create_app()
+app = FastAPI()
 
 
 @app.get("/")
@@ -46,35 +41,36 @@ class ConversationResponse(BaseModel):
 
 
 @app.post("/chat/", response_model=ConversationResponse)
-def chat(
+async def chat(
         params: ConversationSendMessageParams,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
         llm: LLMService = Depends(get_llm),
 ):
     try:
         chat_service = ChatService(db)
-        db_conversation = (
+        db_conversation = await (
             chat_service.get_conversation(params.conversation_id)
             if params.conversation_id
             else chat_service.create_conversation()
         )
-        chat_service.add_message(
+        await chat_service.add_message(
             conversation_id=db_conversation.id,
             message=params.message,
             role="user",
         )
         debate_persona = DebatePersona(llm)
-        bot_response = debate_persona.get_counter_argument(
-            conversation_history=chat_service.format_messages_for_llm(
-                conversation_id=db_conversation.id
-            )
+        history = await chat_service.format_messages_for_llm(
+            conversation_id=db_conversation.id
         )
-        chat_service.add_message(
+        bot_response = debate_persona.get_counter_argument(
+            conversation_history=history
+        )
+        await chat_service.add_message(
             conversation_id=db_conversation.id,
             message=bot_response,
             role="bot",
         )
-        messages = chat_service.get_messages(
+        messages = await chat_service.get_messages(
             conversation_id=db_conversation.id,
         )
         return ConversationResponse(

@@ -1,31 +1,26 @@
 import os
-from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncAttrs
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase
 
-DATABASE_URL = "sqlite:///./chat.db"
+DATABASE_URL = "sqlite+aiosqlite:///./chat.db"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base = declarative_base()
+engine = create_async_engine(DATABASE_URL, connect_args={
+                             "check_same_thread": False})
+SessionLocal = async_sessionmaker(engine)
 
 
-def init_db():
-    """
-    Create tables if they don't exist
-    """
+class Base(AsyncAttrs, DeclarativeBase):
+    pass
+
+
+async def get_db():
     if not os.getenv("TESTING"):
-        Base.metadata.create_all(bind=engine)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
-
-def get_db():
-    """
-    Create a connection and keep it open while it's being used
-    """
     db = SessionLocal()
     try:
         yield db
     finally:
-        db.close()
+        await db.close()

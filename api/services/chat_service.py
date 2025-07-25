@@ -1,31 +1,36 @@
 from datetime import datetime
 from typing import Dict, List
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
 
 from db.models import Conversation, Message
 
 
 class ChatService:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def create_conversation(self) -> Conversation:
+    async def create_conversation(self) -> Conversation:
         db_conversation = Conversation()
         self.db.add(db_conversation)
-        self.db.commit()
-        self.db.refresh(db_conversation)
+        await self.db.commit()
+        await self.db.refresh(db_conversation)
         return db_conversation
 
-    def get_conversation(self, conversation_id: str) -> Conversation:
-        db_conversation = self.db.query(
-            Conversation).filter_by(id=conversation_id).first()
+    async def get_conversation(self, conversation_id: str) -> Conversation:
+        result = await self.db.execute(
+            select(Conversation)
+            .where(Conversation.id == conversation_id)
+        )
+        db_conversation = result.scalars().first()
         if db_conversation is None:
             raise HTTPException(
                 status_code=404, detail=f"No conversation {conversation_id} found")
         return db_conversation
 
-    def add_message(self, conversation_id: str, message: str, role: str) -> Message:
+    async def add_message(self, conversation_id: str, message: str, role: str) -> Message:
         db_message = Message(
             conversation_id=conversation_id,
             content=message,
@@ -33,40 +38,38 @@ class ChatService:
             timestamp=datetime.now(),
         )
         self.db.add(db_message)
-        self.db.commit()
-        self.db.refresh(db_message)
-        print(
-            "Message added with: ",
-            db_message.id,
-            db_message.content,
-            db_message.timestamp
-        )
+        await self.db.commit()
+        await self.db.refresh(db_message)
         return db_message
 
-    def get_messages(
+    async def get_messages(
         self,
         conversation_id: str,
         skip: int = 0,
         limit: int = 10
     ) -> List[Message]:
-        messages = self.db.query(Message)\
-            .filter_by(conversation_id=conversation_id)\
-            .order_by(Message.timestamp.desc())\
-            .offset(skip)\
-            .limit(limit)\
-            .all()
-        return messages
+        result = await self.db.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.timestamp.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        return result.scalars().all()
 
-    def format_messages_for_llm(self, conversation_id: str) -> List[Dict]:
+    async def format_messages_for_llm(self, conversation_id: str) -> List[Dict]:
         """
         Formats conversation messages for llm API
 
         user 'questions' expects to see the value "user"
         llm responses expect to see the value "assistant"
         """
-        messages = self.db.query(Message).filter_by(
-            conversation_id=conversation_id
-        ).order_by(Message.timestamp.asc()).all()
+        result = await self.db.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.timestamp.asc())
+        )
+        messages = result.scalars().all()
 
         return [
             {
