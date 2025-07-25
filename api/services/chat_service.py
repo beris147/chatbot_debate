@@ -1,8 +1,9 @@
 from datetime import datetime
-from typing import List
+from typing import Dict, List
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from api.services.llm_service import LLMService
 from db.models import Conversation, Message
 
 
@@ -43,7 +44,12 @@ class ChatService:
         )
         return db_message
 
-    def get_messages(self, conversation_id: str, skip: int = 0, limit: int = 10) -> List[Message]:
+    def get_messages(
+        self,
+        conversation_id: str,
+        skip: int = 0,
+        limit: int = 10
+    ) -> List[Message]:
         messages = self.db.query(Message)\
             .filter_by(conversation_id=conversation_id)\
             .order_by(Message.timestamp.desc())\
@@ -51,3 +57,39 @@ class ChatService:
             .limit(limit)\
             .all()
         return messages
+
+    def format_messages_for_llm(self, conversation_id: str) -> List[Dict]:
+        """
+        Formats conversation messages for llm API
+
+        user 'questions' expects to see the value "user"
+        llm responses expect to see the value "assistant"
+        """
+        messages = self.db.query(Message).filter_by(
+            conversation_id=conversation_id
+        ).order_by(Message.timestamp.asc()).all()
+
+        return [
+            {
+                "role": "assistant" if msg.role == "bot" else msg.role,
+                "content": msg.content
+            }
+            for msg in messages
+        ]
+
+    def get_bot_response(
+            self,
+            conversation_id: str,
+            llm_service: LLMService,
+            temperature: float = 0.7
+    ) -> str:
+        """
+        From existing conversation, call LLM bot to get a response
+        """
+
+        messages = self.format_messages_for_llm(conversation_id)
+        response = llm_service.chat_completion(
+            messages=messages,
+            temperature=temperature,
+        )
+        return response['choices'][0]['message']['content']

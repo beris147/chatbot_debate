@@ -17,6 +17,7 @@ def test_new_conversation(client):
     assert "conversation_id" in data
     assert isinstance(data["conversation_id"], str)
     assert len(data["messages"]) == 2
+    assert data["messages"][0] == "Mocked response"
     assert data["messages"][1] == "my message"
 
 

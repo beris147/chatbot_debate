@@ -2,6 +2,7 @@ from typing import List
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from api.services.chat_service import ChatService
+from api.services.llm_service import LLMService, get_llm
 from db.database import get_db, init_db
 from sqlalchemy.orm import Session
 
@@ -44,7 +45,11 @@ class ConversationResponse(BaseModel):
 
 
 @app.post("/chat/", response_model=ConversationResponse)
-def chat(params: ConversationSendMessageParams, db: Session = Depends(get_db)):
+def chat(
+        params: ConversationSendMessageParams,
+        db: Session = Depends(get_db),
+        llm: LLMService = Depends(get_llm),
+):
     try:
         chat_service = ChatService(db)
         db_conversation = (
@@ -57,9 +62,14 @@ def chat(params: ConversationSendMessageParams, db: Session = Depends(get_db)):
             message=params.message,
             role="user",
         )
+        # Call llm with conversation topic
+        bot_response = chat_service.get_bot_response(
+            conversation_id=db_conversation.id,
+            llm_service=llm,
+        )
         chat_service.add_message(
             conversation_id=db_conversation.id,
-            message="reply from bot",
+            message=bot_response,
             role="bot",
         )
         messages = chat_service.get_messages(
