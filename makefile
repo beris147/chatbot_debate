@@ -48,14 +48,14 @@ ifndef DOCKER
 	@echo "Error: Docker is not installed. Please install Docker: https://docs.docker.com/get-docker/"
 	exit 1
 endif
-	@$(DOCKER) build -t ${IMAGE_NAME} . && ${DOCKER} run -d -p 8000:8000 --name ${CONTAINER_NAME} ${IMAGE_NAME} 
+	@$(DOCKER) build -t ${IMAGE_NAME} . && ${DOCKER} run --env-file .env -d -p 8000:8000 --name ${CONTAINER_NAME} ${IMAGE_NAME} 
 
 debug:
 ifndef DOCKER
 	@echo "Error: Docker is not installed. Please install Docker: https://docs.docker.com/get-docker/"
 	exit 1
 endif
-	@$(DOCKER) build -t ${IMAGE_NAME} . && ${DOCKER} run -p 8000:8000 --name ${CONTAINER_NAME} ${IMAGE_NAME} 
+	@$(DOCKER) build -t ${IMAGE_NAME} . && ${DOCKER} run --env-file .env -p 8000:8000 --name ${CONTAINER_NAME} ${IMAGE_NAME} 
 
 down:
 ifndef DOCKER

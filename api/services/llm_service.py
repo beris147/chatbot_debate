@@ -1,3 +1,4 @@
+import os
 from typing import Dict, List, Optional
 import requests
 
@@ -49,13 +50,16 @@ class LLMService:
 
 
 def get_llm(
-    api_key: str = "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",
+    api_key: Optional[str] = None,
     base_url: str = "https://openrouter.ai/api/v1",
     model: str = "deepseek/deepseek-r1-0528:free",
     temperature: float = 0.1,  # lower is faster
     max_tokens: int = 500,  # shorter is faster
     timeout: int = 30
 ) -> LLMService:
+    api_key = api_key or os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise ValueError("OPENROUTER_API_KEY not set in environment")
     return LLMService(
         api_key=api_key,
         base_url=base_url,
