@@ -1,6 +1,7 @@
 from typing import List
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
+from api.personas.debate_persona import DebatePersona
 from api.services.chat_service import ChatService
 from api.services.llm_service import LLMService, get_llm
 from db.database import get_db, init_db
@@ -62,10 +63,11 @@ def chat(
             message=params.message,
             role="user",
         )
-        # Call llm with conversation topic
-        bot_response = chat_service.get_bot_response(
-            conversation_id=db_conversation.id,
-            llm_service=llm,
+        debate_persona = DebatePersona(llm)
+        bot_response = debate_persona.get_counter_argument(
+            conversation_history=chat_service.format_messages_for_llm(
+                conversation_id=db_conversation.id
+            )
         )
         chat_service.add_message(
             conversation_id=db_conversation.id,

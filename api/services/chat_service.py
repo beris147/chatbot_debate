@@ -3,7 +3,6 @@ from typing import Dict, List
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from api.services.llm_service import LLMService
 from db.models import Conversation, Message
 
 
@@ -76,20 +75,3 @@ class ChatService:
             }
             for msg in messages
         ]
-
-    def get_bot_response(
-            self,
-            conversation_id: str,
-            llm_service: LLMService,
-            temperature: float = 0.7
-    ) -> str:
-        """
-        From existing conversation, call LLM bot to get a response
-        """
-
-        messages = self.format_messages_for_llm(conversation_id)
-        response = llm_service.chat_completion(
-            messages=messages,
-            temperature=temperature,
-        )
-        return response['choices'][0]['message']['content']
