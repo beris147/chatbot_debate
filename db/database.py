@@ -1,3 +1,4 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -11,13 +12,18 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
-# Create tables if they don't exist
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    """
+    Create tables if they don't exist
+    """
+    if not os.getenv("TESTING"):
+        Base.metadata.create_all(bind=engine)
 
 
-# Create a connection and keep it open while it's being used
 def get_db():
+    """
+    Create a connection and keep it open while it's being used
+    """
     db = SessionLocal()
     try:
         yield db

@@ -5,11 +5,14 @@ from api.services.chat_service import ChatService
 from db.database import get_db, init_db
 from sqlalchemy.orm import Session
 
-from db.models import Conversation, Message
 
-app = FastAPI()
+def create_app():
+    app = FastAPI()
+    init_db()
+    return app
 
-init_db()
+
+app = create_app()
 
 
 @app.get("/")
@@ -66,5 +69,7 @@ def chat(params: ConversationSendMessageParams, db: Session = Depends(get_db)):
             conversation_id=db_conversation.id,
             messages=[message.content for message in messages]
         )
+    except HTTPException as http_exception:
+        raise http_exception
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
