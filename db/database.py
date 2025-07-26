@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncAttrs
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -14,11 +15,18 @@ class Base(AsyncAttrs, DeclarativeBase):
     pass
 
 
-async def get_db():
+@asynccontextmanager
+async def db_lifespan():
     if not os.getenv("TESTING"):
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
+    yield
+    await engine.dispose()
+    print("Database connections closed")
+
+
+async def get_db():
     db = SessionLocal()
     try:
         yield db

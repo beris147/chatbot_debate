@@ -1,4 +1,4 @@
-import asyncio
+from contextlib import asynccontextmanager
 import json
 from typing import List
 from fastapi import Depends, FastAPI, HTTPException
@@ -8,11 +8,17 @@ from pydantic import BaseModel
 from api.personas.debate_persona import DebatePersona
 from api.services.chat_service import ChatService
 from api.services.llm_service import LLMService, get_llm
-from db.database import get_db
+from db.database import db_lifespan, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
-app = FastAPI()
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
+    async with db_lifespan():
+        yield
+
+app = FastAPI(lifespan=app_lifespan)
 
 
 @app.get("/")
@@ -92,67 +98,80 @@ async def chat_stream(
     db: AsyncSession = Depends(get_db),
     llm: LLMService = Depends(get_llm),
 ):
-    chat_service = ChatService(db)
     try:
-        db_conversation = await (
-            chat_service.get_conversation(params.conversation_id)
-            if params.conversation_id
-            else chat_service.create_conversation()
-        )
-        await chat_service.add_message(
-            conversation_id=db_conversation.id,
-            message=params.message,
-            role="user"
-        )
+        # Create a new session specifically for streaming
+        async with async_sessionmaker(bind=db.bind)() as stream_db:
+            chat_service = ChatService(stream_db)
 
-        async def generate():
-            full_response = ""
-            try:
-                history = await chat_service.format_messages_for_llm(
-                    conversation_id=db_conversation.id
-                )
-                debate_persona = DebatePersona(llm)
-                chunk_id = 1
-                yield "event: start\n\n"
-                async for chunk in debate_persona.gen_counter_argument_stream(history):
-                    chunk_data = {
+            db_conversation = await (
+                chat_service.get_conversation(params.conversation_id)
+                if params.conversation_id
+                else chat_service.create_conversation()
+            )
+
+            await chat_service.add_message(
+                conversation_id=db_conversation.id,
+                message=params.message,
+                role="user"
+            )
+
+            async def generate():
+                full_response = ""
+                try:
+                    # Get fresh history within streaming context
+                    history = await chat_service.format_messages_for_llm(
+                        conversation_id=db_conversation.id
+                    )
+                    debate_persona = DebatePersona(llm)
+
+                    yield "event: start\n\n"
+
+                    # Stream chunks
+                    chunk_id = 1
+                    async for chunk in debate_persona.gen_counter_argument_stream(history):
+                        chunk_data = {
+                            "conversation_id": db_conversation.id,
+                            "message": chunk,
+                            "part": chunk_id,
+                        }
+                        yield f"data: {json.dumps(chunk_data)}\n\n"
+                        full_response += chunk
+                        chunk_id += 1
+
+                    # Final save and response
+                    await chat_service.add_message(
+                        conversation_id=db_conversation.id,
+                        message=full_response,
+                        role="bot"
+                    )
+
+                    # Get fresh messages
+                    messages = await chat_service.get_messages(db_conversation.id)
+                    complete_data = {
                         "conversation_id": db_conversation.id,
-                        "message": chunk,
-                        "part": chunk_id,
+                        "messages": [msg.content for msg in messages],
+                        "part": "final",
                     }
-                    yield f"{json.dumps(chunk_data)}\n\n"
-                    full_response += chunk
-                    chunk_id += 1
+                    yield f"data: {json.dumps(complete_data)}\n\n"
+                    yield "event: end\n\n"
 
-                await chat_service.add_message(
-                    conversation_id=db_conversation.id,
-                    message=full_response,
-                    role="bot"
-                )
+                except Exception as e:
+                    logger.error(f"Stream error: {str(e)}")
+                    yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+                finally:
+                    await stream_db.close()  # Explicit close
 
-                messages = await chat_service.get_messages(db_conversation.id)
-                complete_data = {
-                    "conversation_id": db_conversation.id,
-                    "messages": [msg.content for msg in messages],
-                    "part": "final",
+            return StreamingResponse(
+                generate(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no"
                 }
-                yield f"{json.dumps(complete_data)}\n\n"
-                yield "event: end\n\n"
+            )
 
-            except Exception as e:
-                logger.error(f"Stream error: {str(e)}")
-                yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
-
-        return StreamingResponse(
-            generate(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"
-            }
-        )
-    except HTTPException as http_exception:
-        raise http_exception
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
