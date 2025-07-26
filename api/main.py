@@ -40,13 +40,18 @@ class ConversationSendMessageParams(BaseModel):
     message: str
 
 
+class MessageResponse(BaseModel):
+    role: str
+    message: str
+
+
 class ConversationResponse(BaseModel):
     """
     Response type, returns the conversation id with the last messages sent,
     ordered from last to first
     """
     conversation_id: str
-    messages: List[str]
+    message: List[MessageResponse]
 
 
 @app.post("/chat/", response_model=ConversationResponse)
@@ -84,7 +89,10 @@ async def chat(
         )
         return ConversationResponse(
             conversation_id=db_conversation.id,
-            messages=[message.content for message in messages]
+            message=[
+                MessageResponse(role=message.role, message=message.content)
+                for message in messages
+            ]
         )
     except HTTPException as http_exception:
         raise http_exception
@@ -99,7 +107,6 @@ async def chat_stream(
     llm: LLMService = Depends(get_llm),
 ):
     try:
-        # Create a new session specifically for streaming
         async with async_sessionmaker(bind=db.bind)() as stream_db:
             chat_service = ChatService(stream_db)
 
@@ -118,7 +125,6 @@ async def chat_stream(
             async def generate():
                 full_response = ""
                 try:
-                    # Get fresh history within streaming context
                     history = await chat_service.format_messages_for_llm(
                         conversation_id=db_conversation.id
                     )
@@ -126,30 +132,31 @@ async def chat_stream(
 
                     yield "event: start\n\n"
 
-                    # Stream chunks
                     chunk_id = 1
                     async for chunk in debate_persona.gen_counter_argument_stream(history):
                         chunk_data = {
                             "conversation_id": db_conversation.id,
                             "message": chunk,
+                            "role": "bot",
                             "part": chunk_id,
                         }
                         yield f"data: {json.dumps(chunk_data)}\n\n"
                         full_response += chunk
                         chunk_id += 1
 
-                    # Final save and response
                     await chat_service.add_message(
                         conversation_id=db_conversation.id,
                         message=full_response,
                         role="bot"
                     )
 
-                    # Get fresh messages
                     messages = await chat_service.get_messages(db_conversation.id)
                     complete_data = {
                         "conversation_id": db_conversation.id,
-                        "messages": [msg.content for msg in messages],
+                        "message": [
+                            {"role": msg.role, "message": msg.content}
+                            for msg in messages
+                        ],
                         "part": "final",
                     }
                     yield f"data: {json.dumps(complete_data)}\n\n"
@@ -159,7 +166,7 @@ async def chat_stream(
                     logger.error(f"Stream error: {str(e)}")
                     yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
                 finally:
-                    await stream_db.close()  # Explicit close
+                    await stream_db.close()
 
             return StreamingResponse(
                 generate(),

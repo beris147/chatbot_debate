@@ -16,9 +16,11 @@ def test_new_conversation(client):
     data = response.json()
     assert "conversation_id" in data
     assert isinstance(data["conversation_id"], str)
-    assert len(data["messages"]) == 2
-    assert data["messages"][0] == "Mocked response"
-    assert data["messages"][1] == "my message"
+    assert len(data["message"]) == 2
+    assert data["message"][0]["message"] == "Mocked response"
+    assert data["message"][0]["role"] == "bot"
+    assert data["message"][1]["message"] == "my message"
+    assert data["message"][1]["role"] == "user"
 
 
 def test_chat_with_invalid_conversation_id(client):
