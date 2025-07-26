@@ -6,3 +6,4 @@ httpx
 requests
 aiosqlite
 pytest-asyncio
+aiohttp

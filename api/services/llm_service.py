@@ -1,5 +1,8 @@
+import json
 import os
-from typing import Dict, List, Optional
+from typing import AsyncGenerator, Dict, List, Optional
+import aiohttp
+from fastapi.logger import logger
 import requests
 
 
@@ -47,6 +50,45 @@ class LLMService:
         )
         response.raise_for_status()
         return response.json()
+
+    async def stream_chat_completion(
+        self,
+        messages: List[Dict],
+    ) -> AsyncGenerator[Dict, None]:
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream"
+        }
+
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "presence_penalty": 1.0,
+        }
+
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300)) as session:
+            try:
+                async with session.post(url, headers=headers, json=payload) as response:
+                    if response.status != 200:
+                        error = await response.text()
+                        raise Exception(f"LLM API error: {error}")
+
+                    async for line in response.content:
+                        if line.startswith(b"data: "):
+                            chunk = line[6:].strip()
+                            if chunk != b"[DONE]":
+                                try:
+                                    yield json.loads(chunk)
+                                except json.JSONDecodeError:
+                                    continue
+            except Exception as e:
+                logger.error(f"LLM API connection error: {str(e)}")
+                raise
 
 
 def get_llm(
