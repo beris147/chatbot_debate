@@ -76,9 +76,13 @@ async def chat(
         history = await chat_service.format_messages_for_llm(
             conversation_id=db_conversation.id
         )
-        bot_response = debate_persona.get_counter_argument(
-            conversation_history=history
-        )
+        try:
+            bot_response = await debate_persona.get_counter_argument(
+                conversation_history=history
+            )
+        except Exception as e:
+            logger.error(f"Failed to get counter argument: {str(e)}")
+            bot_response = "I encountered an error processing your request."
         await chat_service.add_message(
             conversation_id=db_conversation.id,
             message=bot_response,

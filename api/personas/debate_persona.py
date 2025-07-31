@@ -59,42 +59,52 @@ class DebatePersona:
             *history
         ]
 
-    def get_counter_argument(
+    async def get_counter_argument(
         self,
         conversation_history: List[Dict],
     ) -> str:
         messages = self.format_debate_messages(conversation_history)
 
-        response = self.llm.chat_completion(
-            messages=messages,
-        )
-        return response['choices'][0]['message']['content']
+        try:
+            response = self.llm.chat_completion(messages=messages)
+            content = response['choices'][0]['message']['content']
+
+            if not content.strip():
+                raise ValueError("Empty response from LLM")
+
+            return content
+
+        except Exception as e:
+            logger.error(f"LLM completion failed: {str(e)}")
+            return "I couldn't generate a response. Please try again."
 
     async def gen_counter_argument_stream(
         self,
         conversation_history: List[Dict],
     ) -> AsyncGenerator[str, None]:
-        """
-        Stream LLM response chunk by chunk
-        """
         messages = self.format_debate_messages(conversation_history)
+        buffer = ""
+        content_received = False
 
         try:
-            buffer = ""
             async for chunk in self.llm.stream_chat_completion(messages=messages):
                 content = chunk.get("choices", [{}])[0].get(
                     "delta", {}).get("content", "")
+
                 if content:
+                    content_received = True
                     buffer += content
-                    if (any(punct in content for punct in ".!?\n") or
-                            # Flush if buffer gets too large
-                            len(buffer) > 100):
+
+                    if any(punct in content for punct in ".!?\n") or len(buffer) > 100:
                         yield buffer
                         buffer = ""
 
             if buffer:
                 yield buffer
 
+            if not content_received:
+                raise ValueError("No content received from stream")
+
         except Exception as e:
-            logger.error(f"LLM streaming error: {str(e)}")
-            yield f"[ERROR: {str(e)}]"
+            logger.error(f"Streaming error: {str(e)}")
+            yield "[ERROR: Failed to generate response]"
